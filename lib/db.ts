@@ -3,8 +3,8 @@ import path from 'path';
 import fs from 'fs';
 import { encryptText, decryptText } from './crypto';
 
-const DB_DIR = path.join(process.cwd(), 'data');
-const DB_PATH = path.join(DB_DIR, 'feedback.db');
+const DB_DIR = process.env.DB_DIR || path.join(process.cwd(), 'data');
+const DB_PATH = process.env.DB_PATH || path.join(DB_DIR, 'feedback.db');
 
 // Ensure db directory exists
 if (!fs.existsSync(DB_DIR)) {
@@ -60,7 +60,8 @@ function decryptFeedback(feedback: Feedback | undefined): Feedback | undefined {
     ...feedback,
     name: decryptText(feedback.name),
     message: decryptText(feedback.message),
-    image_path: feedback.image_path ? decryptText(feedback.image_path) : null
+    image_path: feedback.image_path ? decryptText(feedback.image_path) : null,
+    hasLiked: !!feedback.hasLiked
   };
 }
 

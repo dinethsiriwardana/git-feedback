@@ -1,0 +1,117 @@
+# CI/CD Pipeline for Testing Branch
+# Triggers on push to testing branch.
+# Builds the project, runs tests, and creates a Release PR if all jobs succeed.
+name: Testing Branch Pipeline
+
+on:
+  push:
+    branches: [ testing ]
+
+jobs:
+  build:
+    name: Build Project
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Cache node modules
+        id: cache-npm
+        uses: actions/cache@v6
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-npm.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Setup Next.js build cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/.next/cache
+          key: ${{ runner.os }}-next-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-next-${{ hashFiles('**/package-lock.json') }}-
+
+      - name: Build project
+        run: npm run build
+        env:
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: next-build
+          path: .next
+          include-hidden-files: true
+          retention-days: 1
+
+  test:
+    name: Run Tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Cache node modules
+        id: cache-npm
+        uses: actions/cache@v6
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-npm.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: next-build
+          path: .next
+
+      - name: Run unit tests
+        run: npm run test
+        env:
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+
+  create-pr:
+    name: Create Release PR
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Create Pull Request to Release
+        run: |
+          # Check if PR already exists
+          PR_EXISTS=$(gh pr list --head testing --base release --json number --jq '.[0].number')
+          if [ -n "$PR_EXISTS" ]; then
+            echo "PR already exists: #$PR_EXISTS. Skipping."
+          else
+            gh pr create \
+              --title "release: merge testing into release" \
+              --body "Automated release PR created after successful build and test pipeline on testing branch." \
+              --base release \
+              --head testing
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,170 @@
+# Testing Workflow
+
+name: Example
+
+on:
+  push:
+    branches: [ testing ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Build Project
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Cache Next.js build
+        uses: actions/cache@v6
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '!**/node_modules/**') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+            ${{ runner.os }}-nextjs-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+        env: 
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: next-build
+          path: .next
+          include-hidden-files: true
+          retention-days: 1
+  
+  unit-test:
+    runs-on: ubuntu-latest
+    needs: build
+    outputs:
+      summary: ${{ steps.run-tests.outputs.summary }}
+    steps :
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: next-build
+          path: .next
+      
+      - name: Run unit tests
+        id: run-tests
+        run: |
+          npm run test:unit -- --reporter=default --reporter=github-actions
+          {
+            echo "summary<<EOF"
+            cat "$GITHUB_STEP_SUMMARY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        env: 
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: build
+    outputs:
+      summary: ${{ steps.run-tests.outputs.summary }}
+    steps :
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: next-build
+          path: .next
+      
+      - name: Run integration tests
+        id: run-tests
+        run: |
+          npm run test:integration -- --reporter=default --reporter=github-actions
+          {
+            echo "summary<<EOF"
+            cat "$GITHUB_STEP_SUMMARY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        env: 
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+  
+  create-pr:
+    runs-on: ubuntu-latest
+    needs: [integration-test , unit-test]
+    if: github.ref == 'refs/heads/testing'
+    steps:
+      - name: Create Pull Request
+        uses: actions/github-script@v7
+        env:
+          UNIT_SUMMARY: ${{ needs.unit-test.outputs.summary }}
+          INTEGRATION_SUMMARY: ${{ needs.integration-test.outputs.summary }}
+        with:
+          script: |
+            const unitSummary = process.env.UNIT_SUMMARY;
+            const integrationSummary = process.env.INTEGRATION_SUMMARY;
+            
+            // List all open PRs to find if one already exists for testing -> release
+            const { data: openPrs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              base: 'release',
+              state: 'open'
+            });
+            
+            const existingPr = openPrs.find(pr => pr.head.ref === 'testing');
+            if (existingPr) {
+              console.log(`Closing existing PR #${existingPr.number} before creating a new one...`);
+              await github.rest.pulls.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: existingPr.number,
+                state: 'closed'
+              });
+            }
+            
+            console.log('Creating new Pull Request...');
+            await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Test Workflow] Unit and integration tests completed successfully`,
+              head: 'testing',
+              base: 'release',
+              body: [
+                'This is an automated pull request created after successful unit and integration tests.',
+                '',
+                '### Unit Test Summary',
+                unitSummary,
+                '',
+                '### Integration Test Summary',
+                integrationSummary
+              ].join('\n')
+            });
