@@ -9,14 +9,14 @@ on:
 jobs:
   example:
     runs-on: ubuntu-latest
-    # Print repo details
-    outputs:
-      owner: ${{ steps.get-repo-details.outputs.owner }}
-      repo: ${{ steps.get-repo-details.outputs.repo }}
+    # Print repo details using normal console log
     steps:
-      - name: Get repo details
-        id: get-repo-details
+      - name: Print repo details
         run: |
-          echo "owner=${{ github.repository_owner }}" >> $GITHUB_OUTPUT
-          echo "repo=${{ github.event.repository.name }}" >> $GITHUB_OUTPUT
-        
+          echo "Owner: ${{ github.repository_owner }}"
+          echo "Repo: ${{ github.event.repository.name }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Token: ${{ secrets.GITHUB_TOKEN }}"
