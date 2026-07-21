@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "node -e \"const fs=require('fs'); fs.rmSync('data', {recursive:true, force:true}); fs.rmSync('public/uploads', {recursive:true, force:true});\" && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:unit": "vitest run --exclude **/api.test.ts",
+    "test:integration": "vitest run **/api.test.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
@@ -27,6 +30,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.9"
   }
 }
