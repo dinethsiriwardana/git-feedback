@@ -3,3 +3,10 @@ name: Test
 on:
   push:
     branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print Repo details
+        run:  echo "Hello World"
